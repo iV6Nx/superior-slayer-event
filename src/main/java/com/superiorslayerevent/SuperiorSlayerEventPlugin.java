@@ -46,6 +46,12 @@ import net.runelite.client.util.ImageUtil;
 )
 public class SuperiorSlayerEventPlugin extends Plugin
 {
+	/*
+	 * ==================================================
+	 * CONFIG / STORAGE
+	 * ==================================================
+	 */
+
 	private static final String CONFIG_GROUP =
 			"superiorslayerevent";
 
@@ -67,6 +73,12 @@ public class SuperiorSlayerEventPlugin extends Plugin
 	private static final DateTimeFormatter TIME_FORMAT =
 			DateTimeFormatter.ofPattern("HH:mm:ss");
 
+	/*
+	 * ==================================================
+	 * INJECTED SERVICES
+	 * ==================================================
+	 */
+
 	@Inject
 	private Client client;
 
@@ -81,6 +93,12 @@ public class SuperiorSlayerEventPlugin extends Plugin
 
 	@Inject
 	private SuperiorLeaderboardClient leaderboardClient;
+
+	/*
+	 * ==================================================
+	 * EVENT DATA
+	 * ==================================================
+	 */
 
 	private final Map<SuperiorMonster, Integer> monsterKills =
 			new EnumMap<>(SuperiorMonster.class);
@@ -106,16 +124,13 @@ public class SuperiorSlayerEventPlugin extends Plugin
 			1;
 
 	/*
-	 * ==================================================
-	 * EVENT END
+	 * Supplied by EventControl B5.
 	 *
-	 * Supplied by EventControl!B5.
+	 * Current backend format is an ISO UTC timestamp,
+	 * for example:
 	 *
-	 * Example:
-	 * 2026-10-31 23:59
-	 * ==================================================
+	 * 2026-10-31T23:59:00.000Z
 	 */
-
 	private String eventEnd =
 			"";
 
@@ -123,22 +138,23 @@ public class SuperiorSlayerEventPlugin extends Plugin
 			"Never";
 
 	/*
-	 * Keeps the most recent valid logged-in
-	 * RuneScape name.
+	 * Keeps the last valid RuneScape player name.
 	 *
-	 * RuneLite can occasionally return no local
-	 * player briefly while loading/changing state.
+	 * RuneLite can briefly return no local player
+	 * during login/loading/state changes.
 	 */
 	private String lastKnownPlayerName =
 			"";
 
 	/*
-	 * These values remember the last player state
-	 * that was sent to the clan event.
+	 * ==================================================
+	 * SUBMISSION FINGERPRINT
+	 * ==================================================
 	 *
-	 * This stops every leaderboard refresh from
-	 * uploading the exact same information again.
+	 * Prevents repeatedly uploading the exact same
+	 * player state every leaderboard refresh.
 	 */
+
 	private String lastSubmittedPlayer =
 			"";
 
@@ -154,9 +170,16 @@ public class SuperiorSlayerEventPlugin extends Plugin
 	private int lastSubmittedEventVersion =
 			-1;
 
+	/*
+	 * ==================================================
+	 * UI / TIMERS
+	 * ==================================================
+	 */
+
 	private Timer leaderboardRefreshTimer;
 
 	private SuperiorSlayerEventPanel panel;
+
 	private NavigationButton navButton;
 
 	private BufferedImage sidebarIcon;
@@ -193,12 +216,8 @@ public class SuperiorSlayerEventPlugin extends Plugin
 
 		navButton =
 				NavigationButton.builder()
-						.tooltip(
-								"Superior Slayer Event"
-						)
-						.icon(
-								sidebarIcon
-						)
+						.tooltip("Superior Slayer Event")
+						.icon(sidebarIcon)
 						.priority(5)
 						.panel(panel)
 						.build();
@@ -215,9 +234,9 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		/*
 		 * Fetch server state first.
 		 *
-		 * Once the snapshot arrives,
+		 * When the snapshot arrives,
 		 * handleEventSnapshot() automatically
-		 * registers the player.
+		 * registers the player when appropriate.
 		 */
 		if (isLeaderboardSyncEnabled())
 		{
@@ -245,10 +264,26 @@ public class SuperiorSlayerEventPlugin extends Plugin
 	{
 		saveAllData();
 
+		/*
+		 * Stop automatic leaderboard refresh.
+		 */
 		if (leaderboardRefreshTimer != null)
 		{
 			leaderboardRefreshTimer.stop();
 			leaderboardRefreshTimer = null;
+		}
+
+		/*
+		 * IMPORTANT:
+		 *
+		 * The panel has its own Swing Timer for
+		 * the live event countdown.
+		 *
+		 * Stop it before discarding the panel.
+		 */
+		if (panel != null)
+		{
+			panel.stopCountdownTimer();
 		}
 
 		if (navButton != null)
@@ -271,7 +306,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 
 	/*
 	 * ==================================================
-	 * AUTO REFRESH
+	 * AUTOMATIC LEADERBOARD REFRESH
 	 * ==================================================
 	 */
 
@@ -293,7 +328,6 @@ public class SuperiorSlayerEventPlugin extends Plugin
 							}
 
 							updateSlayerLevel();
-
 							refreshLeaderboard();
 						}
 				);
@@ -329,26 +363,25 @@ public class SuperiorSlayerEventPlugin extends Plugin
 
 		updateSlayerLevel();
 
-		/*
-		 * Remember the player's current name.
-		 */
 		Player localPlayer =
 				client.getLocalPlayer();
 
 		if (
 				localPlayer != null
 						&& localPlayer.getName() != null
-						&& !localPlayer.getName().trim().isEmpty()
+						&& !localPlayer.getName()
+						.trim()
+						.isEmpty()
 		)
 		{
 			lastKnownPlayerName =
-					localPlayer.getName().trim();
+					localPlayer.getName()
+							.trim();
 		}
 
 		if (isLeaderboardSyncEnabled())
 		{
 			resetSubmissionFingerprint();
-
 			refreshLeaderboard();
 		}
 
@@ -465,6 +498,10 @@ public class SuperiorSlayerEventPlugin extends Plugin
 			return;
 		}
 
+		/*
+		 * If connected to a clan event which has
+		 * officially ended, ignore event activity.
+		 */
 		if (
 				isLeaderboardSyncEnabled()
 						&& !eventActive
@@ -743,9 +780,6 @@ public class SuperiorSlayerEventPlugin extends Plugin
 				localPlayer.getName()
 						.trim();
 
-		/*
-		 * Remember the valid player name.
-		 */
 		lastKnownPlayerName =
 				playerName;
 
@@ -786,6 +820,11 @@ public class SuperiorSlayerEventPlugin extends Plugin
 				currentEventVersion
 		);
 
+		/*
+		 * Refresh shortly after upload so the
+		 * newly submitted participant/score is
+		 * reflected in the sidebar.
+		 */
 		Timer delayedRefresh =
 				new Timer(
 						2000,
@@ -932,14 +971,11 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		currentEventVersion =
 				snapshot.getResetVersion();
 
-		/*
-		 * NEW:
-		 * Read the event end date/time.
-		 */
 		eventEnd =
 				snapshot.getEventEnd() == null
 						? ""
-						: snapshot.getEventEnd().trim();
+						: snapshot.getEventEnd()
+						.trim();
 
 		checkForNewEvent(
 				currentEventVersion
@@ -968,18 +1004,15 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 
 		/*
-		 * ==================================================
-		 * AUTOMATIC EVENT PARTICIPATION
-		 * ==================================================
+		 * Automatically register/update the
+		 * logged-in player while the event is active.
 		 */
-
 		if (
 				eventActive
 						&& isPlayerLoggedIn()
 		)
 		{
 			updateSlayerLevel();
-
 			submitScore();
 		}
 	}
@@ -1049,6 +1082,12 @@ public class SuperiorSlayerEventPlugin extends Plugin
 				null
 		);
 	}
+
+	/*
+	 * ==================================================
+	 * RESET LOCAL EVENT DATA FOR NEW EVENT
+	 * ==================================================
+	 */
 
 	private void resetLocalEventDataForNewEvent()
 	{
@@ -1160,10 +1199,6 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		return currentEventVersion;
 	}
 
-	/*
-	 * NEW:
-	 * Used by the panel countdown.
-	 */
 	public String getEventEnd()
 	{
 		return eventEnd;
@@ -1188,11 +1223,14 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		if (
 				player != null
 						&& player.getName() != null
-						&& !player.getName().trim().isEmpty()
+						&& !player.getName()
+						.trim()
+						.isEmpty()
 		)
 		{
 			lastKnownPlayerName =
-					player.getName().trim();
+					player.getName()
+							.trim();
 
 			return lastKnownPlayerName;
 		}
@@ -1233,7 +1271,8 @@ public class SuperiorSlayerEventPlugin extends Plugin
 					leaderboard.get(i);
 
 			if (
-					entry.getPlayer()
+					entry.getPlayer() != null
+							&& entry.getPlayer()
 							.equalsIgnoreCase(
 									playerName
 							)
@@ -1588,13 +1627,12 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 
 		/*
-		 * Do not remove EVENT_VERSION_KEY.
+		 * Do not remove EVENT_VERSION_KEY here.
 		 *
-		 * This prevents a normal manual reset
-		 * interfering with the server-side
+		 * Keeping it prevents a normal manual reset
+		 * from interfering with server-side
 		 * new-event detection.
 		 */
-
 		resetSubmissionFingerprint();
 
 		refreshPanel();

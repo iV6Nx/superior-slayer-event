@@ -8,6 +8,12 @@ import net.runelite.client.config.ConfigSection;
 @ConfigGroup("superiorslayerevent")
 public interface SuperiorSlayerEventConfig extends Config
 {
+    /*
+     * ==================================================
+     * SECTIONS
+     * ==================================================
+     */
+
     @ConfigSection(
             name = "Event Display",
             description = "Controls what is shown for the Superior Slayer event.",
@@ -125,18 +131,15 @@ public interface SuperiorSlayerEventConfig extends Config
                     "Share your RuneScape name, Slayer level, Superior kill total and event point total "
                             + "with the configured clan event leaderboard.",
             warning =
-                    "This feature submits your IP address to a 3rd-party server not controlled or "
-                            + "verified by RuneLite developers. It also sends your RuneScape name, Slayer "
-                            + "level, Superior kill total and event point total to the configured clan "
-                            + "leaderboard service.",
+                    "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
             position = 0,
             section = leaderboardSection
     )
     default boolean enableLeaderboardSync()
     {
         /*
-         * Must remain opt-in because this feature
-         * communicates with a third-party server.
+         * Third-party communication must remain
+         * optional and disabled by default.
          */
         return false;
     }
