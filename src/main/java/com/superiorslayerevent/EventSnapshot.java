@@ -10,6 +10,7 @@ public class EventSnapshot
     private final int resetVersion;
     private final String eventEnd;
     private final List<LeaderboardEntry> leaderboard;
+    private final List<MemberEntry> members;
 
     public EventSnapshot(
             String clanName,
@@ -17,7 +18,8 @@ public class EventSnapshot
             boolean eventActive,
             int resetVersion,
             String eventEnd,
-            List<LeaderboardEntry> leaderboard)
+            List<LeaderboardEntry> leaderboard,
+            List<MemberEntry> members)
     {
         this.clanName = clanName;
         this.eventName = eventName;
@@ -25,6 +27,7 @@ public class EventSnapshot
         this.resetVersion = resetVersion;
         this.eventEnd = eventEnd;
         this.leaderboard = leaderboard;
+        this.members = members;
     }
 
     public String getClanName()
@@ -55,5 +58,10 @@ public class EventSnapshot
     public List<LeaderboardEntry> getLeaderboard()
     {
         return leaderboard;
+    }
+
+    public List<MemberEntry> getMembers()
+    {
+        return members;
     }
 }

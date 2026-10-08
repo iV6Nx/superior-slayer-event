@@ -4,6 +4,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.FlowLayout;
 import java.awt.GridLayout;
 import java.time.Duration;
 import java.time.Instant;
@@ -50,6 +51,13 @@ public class SuperiorSlayerEventPanel extends PluginPanel
 
     private static final int STAT_ROW_WIDTH = 218;
     private static final int STAT_ROW_HEIGHT = 72;
+
+    /*
+     * Slightly narrower than the normal stat-row width
+     * so the full Members card, including its right border,
+     * is always visible inside RuneLite's sidebar.
+     */
+    private static final int MEMBERS_CARD_WIDTH = 218;
 
     private static final DateTimeFormatter EVENT_END_FORMAT =
             DateTimeFormatter
@@ -224,6 +232,12 @@ public class SuperiorSlayerEventPanel extends PluginPanel
                     SwingConstants.CENTER
             );
 
+    private final JLabel pluginMembersSyncLabel =
+            new JLabel(
+                    "Last synced: Never",
+                    SwingConstants.CENTER
+            );
+
     /*
      * ==================================================
      * PANELS
@@ -231,6 +245,12 @@ public class SuperiorSlayerEventPanel extends PluginPanel
      */
 
     private final JPanel clanMembersPanel =
+            new JPanel();
+
+    private final JPanel pluginMembersPanel =
+            new JPanel();
+
+    private final JPanel pluginMembersWrapperPanel =
             new JPanel();
 
     private final JPanel breakdownPanel =
@@ -273,19 +293,60 @@ public class SuperiorSlayerEventPanel extends PluginPanel
                 ColorScheme.DARK_GRAY_COLOR
         );
 
+        /*
+         * Keep Event, Monsters, Members and Boards
+         * on one single tab row instead of wrapping.
+         */
+        tabs.setTabLayoutPolicy(
+                JTabbedPane.SCROLL_TAB_LAYOUT
+        );
+
+        tabs.setFont(
+                tabs.getFont()
+                        .deriveFont(
+                                Font.PLAIN,
+                                16f
+                        )
+        );
+
         tabs.addTab(
-                "Event",
+                "📅",
                 createEventTab()
         );
 
-        tabs.addTab(
-                "Monsters",
-                createMonstersTab()
+        tabs.setToolTipTextAt(
+                0,
+                "Event"
         );
 
         tabs.addTab(
-                "Boards",
+                "👹",
+                createMonstersTab()
+        );
+
+        tabs.setToolTipTextAt(
+                1,
+                "Monsters"
+        );
+
+        tabs.addTab(
+                "👥",
+                createMembersTab()
+        );
+
+        tabs.setToolTipTextAt(
+                2,
+                "Members"
+        );
+
+        tabs.addTab(
+                "🏆",
                 createBoardsTab()
+        );
+
+        tabs.setToolTipTextAt(
+                3,
+                "Boards"
         );
 
         add(
@@ -509,7 +570,7 @@ public class SuperiorSlayerEventPanel extends PluginPanel
                         .getFont()
                         .deriveFont(
                                 Font.PLAIN,
-                                9f
+                                11f
                         )
         );
 
@@ -912,7 +973,7 @@ public class SuperiorSlayerEventPanel extends PluginPanel
                 title.getFont()
                         .deriveFont(
                                 Font.BOLD,
-                                11f
+                                13f
                         )
         );
 
@@ -934,7 +995,7 @@ public class SuperiorSlayerEventPanel extends PluginPanel
                         .getFont()
                         .deriveFont(
                                 Font.BOLD,
-                                9f
+                                11f
                         )
         );
 
@@ -1167,6 +1228,270 @@ public class SuperiorSlayerEventPanel extends PluginPanel
 
     /*
      * ==================================================
+     * MEMBERS TAB
+     * ==================================================
+     */
+
+    private JPanel createMembersTab()
+    {
+        JPanel content =
+                createPage();
+
+        JLabel membersTitle =
+                new JLabel(
+                        "CLAN MEMBERS",
+                        SwingConstants.CENTER
+                );
+
+        membersTitle.setForeground(
+                GOLD
+        );
+
+        membersTitle.setFont(
+                membersTitle
+                        .getFont()
+                        .deriveFont(
+                                Font.BOLD,
+                                14f
+                        )
+        );
+
+        membersTitle.setAlignmentX(
+                CENTER_ALIGNMENT
+        );
+
+        membersTitle.setMaximumSize(
+                new Dimension(
+                        CONTENT_WIDTH,
+                        24
+                )
+        );
+
+        content.add(
+                membersTitle
+        );
+
+        content.add(
+                Box.createVerticalStrut(5)
+        );
+
+        JLabel subtitle =
+                new JLabel(
+                        "Members using the event plugin",
+                        SwingConstants.CENTER
+                );
+
+        subtitle.setForeground(
+                Color.LIGHT_GRAY
+        );
+
+        subtitle.setFont(
+                subtitle
+                        .getFont()
+                        .deriveFont(
+                                Font.PLAIN,
+                                12f
+                        )
+        );
+
+        subtitle.setAlignmentX(
+                CENTER_ALIGNMENT
+        );
+
+        subtitle.setMaximumSize(
+                new Dimension(
+                        CONTENT_WIDTH,
+                        20
+                )
+        );
+
+        content.add(
+                subtitle
+        );
+
+        content.add(
+                Box.createVerticalStrut(4)
+        );
+
+        JLabel onlineInfo =
+                new JLabel(
+                        "Online = refreshed every 30 seconds",
+                        SwingConstants.CENTER
+                );
+
+        onlineInfo.setForeground(
+                Color.GRAY
+        );
+
+        onlineInfo.setFont(
+                onlineInfo
+                        .getFont()
+                        .deriveFont(
+                                Font.PLAIN,
+                                11f
+                        )
+        );
+
+        onlineInfo.setAlignmentX(
+                CENTER_ALIGNMENT
+        );
+
+        onlineInfo.setMaximumSize(
+                new Dimension(
+                        CONTENT_WIDTH,
+                        18
+                )
+        );
+
+        content.add(
+                onlineInfo
+        );
+
+        content.add(
+                Box.createVerticalStrut(12)
+        );
+
+        pluginMembersPanel.setLayout(
+                new BoxLayout(
+                        pluginMembersPanel,
+                        BoxLayout.Y_AXIS
+                )
+        );
+
+        pluginMembersPanel.setBackground(
+                ColorScheme.DARK_GRAY_COLOR
+        );
+
+        pluginMembersPanel.setPreferredSize(
+                new Dimension(
+                        MEMBERS_CARD_WIDTH,
+                        30
+                )
+        );
+
+        pluginMembersPanel.setMinimumSize(
+                new Dimension(
+                        MEMBERS_CARD_WIDTH,
+                        30
+                )
+        );
+
+        pluginMembersPanel.setMaximumSize(
+                new Dimension(
+                        MEMBERS_CARD_WIDTH,
+                        Integer.MAX_VALUE
+                )
+        );
+
+        /*
+         * Centre the fixed-width member list inside the
+         * available Members-tab width. Because the card
+         * itself is narrower, both its left and right
+         * borders remain fully visible.
+         */
+        pluginMembersWrapperPanel.setLayout(
+                new BorderLayout()
+        );
+
+        pluginMembersWrapperPanel.setBackground(
+                ColorScheme.DARK_GRAY_COLOR
+        );
+
+        /*
+         * Equal left/right padding keeps the Members box
+         * truly centred in the available sidebar width.
+         */
+        pluginMembersWrapperPanel.setBorder(
+                BorderFactory.createEmptyBorder(
+                        0,
+                        0,
+                        0,
+                        18
+                )
+        );
+
+        pluginMembersWrapperPanel.setAlignmentX(
+                CENTER_ALIGNMENT
+        );
+
+        pluginMembersWrapperPanel.setPreferredSize(
+                new Dimension(
+                        CONTENT_WIDTH,
+                        30
+                )
+        );
+
+        pluginMembersWrapperPanel.setMinimumSize(
+                new Dimension(
+                        CONTENT_WIDTH,
+                        30
+                )
+        );
+
+        pluginMembersWrapperPanel.setMaximumSize(
+                new Dimension(
+                        CONTENT_WIDTH,
+                        Integer.MAX_VALUE
+                )
+        );
+
+        pluginMembersWrapperPanel.add(
+                pluginMembersPanel,
+                BorderLayout.CENTER
+        );
+
+        content.add(
+                pluginMembersWrapperPanel
+        );
+
+        content.add(
+                Box.createVerticalStrut(8)
+        );
+
+        pluginMembersSyncLabel.setForeground(
+                Color.LIGHT_GRAY
+        );
+
+        pluginMembersSyncLabel.setFont(
+                pluginMembersSyncLabel
+                        .getFont()
+                        .deriveFont(
+                                11f
+                        )
+        );
+
+        pluginMembersSyncLabel.setAlignmentX(
+                CENTER_ALIGNMENT
+        );
+
+        pluginMembersSyncLabel.setMaximumSize(
+                new Dimension(
+                        CONTENT_WIDTH,
+                        18
+                )
+        );
+
+        content.add(
+                pluginMembersSyncLabel
+        );
+
+        /*
+         * No manual refresh button is needed here.
+         * SuperiorSlayerEventPlugin automatically refreshes
+         * the event snapshot and Members list every 30 seconds.
+         */
+
+        content.add(
+                Box.createVerticalStrut(10)
+        );
+
+        return wrapPage(
+                content
+        );
+    }
+
+    /*
+     * ==================================================
      * BOARDS TAB
      * ==================================================
      */
@@ -1279,33 +1604,10 @@ public class SuperiorSlayerEventPanel extends PluginPanel
                 boardsSyncLabel
         );
 
-        content.add(
-                Box.createVerticalStrut(6)
-        );
-
-        JButton refreshBoards =
-                new JButton(
-                        "Refresh Leaderboards"
-                );
-
-        refreshBoards.setAlignmentX(
-                CENTER_ALIGNMENT
-        );
-
-        refreshBoards.addActionListener(
-                e ->
-                {
-                    boardsSyncLabel.setText(
-                            "Last synced: Syncing..."
-                    );
-
-                    plugin.refreshLeaderboard();
-                }
-        );
-
-        content.add(
-                refreshBoards
-        );
+        /*
+         * Leaderboards refresh automatically every 30 seconds,
+         * so no manual refresh button is needed.
+         */
 
         return wrapPage(
                 content
@@ -1403,7 +1705,12 @@ public class SuperiorSlayerEventPanel extends PluginPanel
                 "Last synced: " + sync
         );
 
+        pluginMembersSyncLabel.setText(
+                "Last synced: " + sync
+        );
+
         refreshClanMembers();
+        refreshPluginMembers();
         refreshBreakdown();
         refreshLeaderboards();
 
@@ -1837,21 +2144,21 @@ public class SuperiorSlayerEventPanel extends PluginPanel
         wrapper.setPreferredSize(
                 new Dimension(
                         CONTENT_WIDTH,
-                        116
+                        132
                 )
         );
 
         wrapper.setMinimumSize(
                 new Dimension(
                         CONTENT_WIDTH,
-                        116
+                        132
                 )
         );
 
         wrapper.setMaximumSize(
                 new Dimension(
                         CONTENT_WIDTH,
-                        116
+                        132
                 )
         );
 
@@ -1887,21 +2194,21 @@ public class SuperiorSlayerEventPanel extends PluginPanel
         card.setPreferredSize(
                 new Dimension(
                         STAT_ROW_WIDTH,
-                        116
+                        132
                 )
         );
 
         card.setMinimumSize(
                 new Dimension(
                         STAT_ROW_WIDTH,
-                        116
+                        132
                 )
         );
 
         card.setMaximumSize(
                 new Dimension(
                         STAT_ROW_WIDTH,
-                        116
+                        132
                 )
         );
 
@@ -1910,7 +2217,7 @@ public class SuperiorSlayerEventPanel extends PluginPanel
                         .getFont()
                         .deriveFont(
                                 Font.BOLD,
-                                10f
+                                12f
                         )
         );
 
@@ -1927,7 +2234,7 @@ public class SuperiorSlayerEventPanel extends PluginPanel
                         .getFont()
                         .deriveFont(
                                 Font.BOLD,
-                                11f
+                                13f
                         )
         );
 
@@ -1944,7 +2251,7 @@ public class SuperiorSlayerEventPanel extends PluginPanel
                         .getFont()
                         .deriveFont(
                                 Font.PLAIN,
-                                10f
+                                12f
                         )
         );
 
@@ -1961,7 +2268,7 @@ public class SuperiorSlayerEventPanel extends PluginPanel
                         .getFont()
                         .deriveFont(
                                 Font.PLAIN,
-                                10f
+                                12f
                         )
         );
 
@@ -1974,7 +2281,7 @@ public class SuperiorSlayerEventPanel extends PluginPanel
         );
 
         card.add(
-                Box.createVerticalStrut(8)
+                Box.createVerticalStrut(9)
         );
 
         card.add(
@@ -1982,7 +2289,7 @@ public class SuperiorSlayerEventPanel extends PluginPanel
         );
 
         card.add(
-                Box.createVerticalStrut(6)
+                Box.createVerticalStrut(7)
         );
 
         card.add(
@@ -1990,7 +2297,7 @@ public class SuperiorSlayerEventPanel extends PluginPanel
         );
 
         card.add(
-                Box.createVerticalStrut(6)
+                Box.createVerticalStrut(7)
         );
 
         card.add(
@@ -2780,6 +3087,274 @@ public class SuperiorSlayerEventPanel extends PluginPanel
 
         row.add(
                 slayerPanel,
+                BorderLayout.EAST
+        );
+
+        return row;
+    }
+
+    /*
+     * ==================================================
+     * PLUGIN MEMBERS TAB
+     * ==================================================
+     */
+
+    private void refreshPluginMembers()
+    {
+        pluginMembersPanel.removeAll();
+
+        List<MemberEntry> members =
+                new ArrayList<>(
+                        plugin.getMembers()
+                );
+
+        members.sort(
+                Comparator
+                        .comparing(
+                                MemberEntry::isOnline
+                        )
+                        .reversed()
+                        .thenComparing(
+                                MemberEntry::getPlayer,
+                                String.CASE_INSENSITIVE_ORDER
+                        )
+        );
+
+        int panelHeight;
+
+        if (members.isEmpty())
+        {
+            pluginMembersPanel.add(
+                    createMessage(
+                            "No plugin members connected yet."
+                    )
+            );
+
+            panelHeight =
+                    30;
+        }
+        else
+        {
+            for (
+                    MemberEntry member :
+                    members
+            )
+            {
+                pluginMembersPanel.add(
+                        createPluginMemberRow(
+                                member
+                        )
+                );
+
+                pluginMembersPanel.add(
+                        Box.createVerticalStrut(6)
+                );
+            }
+
+            panelHeight =
+                    members.size() * 70;
+        }
+
+        pluginMembersPanel.setPreferredSize(
+                new Dimension(
+                        MEMBERS_CARD_WIDTH,
+                        panelHeight
+                )
+        );
+
+        pluginMembersPanel.setMinimumSize(
+                new Dimension(
+                        MEMBERS_CARD_WIDTH,
+                        panelHeight
+                )
+        );
+
+        pluginMembersPanel.setMaximumSize(
+                new Dimension(
+                        MEMBERS_CARD_WIDTH,
+                        panelHeight
+                )
+        );
+
+        pluginMembersWrapperPanel.setPreferredSize(
+                new Dimension(
+                        CONTENT_WIDTH,
+                        panelHeight
+                )
+        );
+
+        pluginMembersWrapperPanel.setMinimumSize(
+                new Dimension(
+                        CONTENT_WIDTH,
+                        panelHeight
+                )
+        );
+
+        pluginMembersWrapperPanel.setMaximumSize(
+                new Dimension(
+                        CONTENT_WIDTH,
+                        panelHeight
+                )
+        );
+
+        pluginMembersPanel.revalidate();
+        pluginMembersPanel.repaint();
+
+        pluginMembersWrapperPanel.revalidate();
+        pluginMembersWrapperPanel.repaint();
+    }
+
+    /*
+     * ==================================================
+     * PLUGIN MEMBER ROW
+     * ==================================================
+     */
+
+    private JPanel createPluginMemberRow(
+            MemberEntry member)
+    {
+        JPanel row =
+                new JPanel(
+                        new BorderLayout(
+                                8,
+                                0
+                        )
+                );
+
+        row.setBackground(
+                ColorScheme.DARKER_GRAY_COLOR
+        );
+
+        row.setBorder(
+                BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(
+                                ColorScheme.MEDIUM_GRAY_COLOR,
+                                1
+                        ),
+                        BorderFactory.createEmptyBorder(
+                                10,
+                                12,
+                                10,
+                                12
+                        )
+                )
+        );
+
+        row.setAlignmentX(
+                CENTER_ALIGNMENT
+        );
+
+        row.setPreferredSize(
+                new Dimension(
+                        MEMBERS_CARD_WIDTH,
+                        62
+                )
+        );
+
+        row.setMinimumSize(
+                new Dimension(
+                        MEMBERS_CARD_WIDTH,
+                        62
+                )
+        );
+
+        row.setMaximumSize(
+                new Dimension(
+                        MEMBERS_CARD_WIDTH,
+                        62
+                )
+        );
+
+        /*
+         * PLAYER NAME
+         *
+         * Green = online
+         * Grey  = offline
+         */
+        JLabel playerName =
+                new JLabel(
+                        member.getPlayer()
+                );
+
+        playerName.setForeground(
+                member.isOnline()
+                        ? GREEN
+                        : Color.GRAY
+        );
+
+        playerName.setFont(
+                playerName
+                        .getFont()
+                        .deriveFont(
+                                Font.BOLD,
+                                15f
+                        )
+        );
+
+        /*
+         * BUY-IN STATUS
+         */
+        String buyInStatus =
+                member.getBuyInStatus();
+
+        if (
+                buyInStatus == null
+                        || buyInStatus.trim().isEmpty()
+        )
+        {
+            buyInStatus =
+                    "Not Paid";
+        }
+
+        JLabel buyIn =
+                new JLabel(
+                        buyInStatus.toUpperCase(),
+                        SwingConstants.RIGHT
+                );
+
+        buyIn.setFont(
+                buyIn
+                        .getFont()
+                        .deriveFont(
+                                Font.BOLD,
+                                13f
+                        )
+        );
+
+        if (
+                "Paid".equalsIgnoreCase(
+                        buyInStatus
+                )
+        )
+        {
+            buyIn.setForeground(
+                    GREEN
+            );
+        }
+        else if (
+                "Refunded".equalsIgnoreCase(
+                        buyInStatus
+                )
+        )
+        {
+            buyIn.setForeground(
+                    RED
+            );
+        }
+        else
+        {
+            buyIn.setForeground(
+                    GOLD
+            );
+        }
+
+        row.add(
+                playerName,
+                BorderLayout.WEST
+        );
+
+        row.add(
+                buyIn,
                 BorderLayout.EAST
         );
 

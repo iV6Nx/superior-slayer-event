@@ -67,11 +67,20 @@ public class SuperiorSlayerEventPlugin extends Plugin
 	private static final String EVENT_VERSION_KEY =
 			"eventResetVersion";
 
+	/*
+	 * Two minutes.
+	 *
+	 * This timer now handles both:
+	 *
+	 * - member heartbeat
+	 * - leaderboard/event refresh
+	 */
 	private static final int LEADERBOARD_REFRESH_MS =
 			120000;
 
 	private static final DateTimeFormatter TIME_FORMAT =
 			DateTimeFormatter.ofPattern("HH:mm:ss");
+
 
 	/*
 	 * ==================================================
@@ -94,6 +103,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 	@Inject
 	private SuperiorLeaderboardClient leaderboardClient;
 
+
 	/*
 	 * ==================================================
 	 * EVENT DATA
@@ -101,9 +111,24 @@ public class SuperiorSlayerEventPlugin extends Plugin
 	 */
 
 	private final Map<SuperiorMonster, Integer> monsterKills =
-			new EnumMap<>(SuperiorMonster.class);
+			new EnumMap<>(
+					SuperiorMonster.class
+			);
 
+	/*
+	 * Paid leaderboard players.
+	 */
 	private final List<LeaderboardEntry> leaderboard =
+			new ArrayList<>();
+
+	/*
+	 * NEW:
+	 *
+	 * Every member currently registered through
+	 * the plugin, whether they are Paid,
+	 * Not Paid or Refunded.
+	 */
+	private final List<MemberEntry> members =
 			new ArrayList<>();
 
 	private int totalSuperiorKills = 0;
@@ -124,12 +149,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 			1;
 
 	/*
-	 * Supplied by EventControl B5.
-	 *
-	 * Current backend format is an ISO UTC timestamp,
-	 * for example:
-	 *
-	 * 2026-10-31T23:59:00.000Z
+	 * Supplied by EventControl!B5.
 	 */
 	private String eventEnd =
 			"";
@@ -138,21 +158,25 @@ public class SuperiorSlayerEventPlugin extends Plugin
 			"Never";
 
 	/*
-	 * Keeps the last valid RuneScape player name.
+	 * RuneLite can temporarily lose access
+	 * to the local player during loading.
 	 *
-	 * RuneLite can briefly return no local player
-	 * during login/loading/state changes.
+	 * Preserve the most recent valid RSN.
 	 */
 	private String lastKnownPlayerName =
 			"";
+
 
 	/*
 	 * ==================================================
 	 * SUBMISSION FINGERPRINT
 	 * ==================================================
 	 *
-	 * Prevents repeatedly uploading the exact same
-	 * player state every leaderboard refresh.
+	 * Prevents identical score submissions from
+	 * being uploaded repeatedly.
+	 *
+	 * Heartbeats are separate and are still sent
+	 * every two minutes.
 	 */
 
 	private String lastSubmittedPlayer =
@@ -170,6 +194,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 	private int lastSubmittedEventVersion =
 			-1;
 
+
 	/*
 	 * ==================================================
 	 * UI / TIMERS
@@ -183,6 +208,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 	private NavigationButton navButton;
 
 	private BufferedImage sidebarIcon;
+
 
 	/*
 	 * ==================================================
@@ -216,10 +242,18 @@ public class SuperiorSlayerEventPlugin extends Plugin
 
 		navButton =
 				NavigationButton.builder()
-						.tooltip("Superior Slayer Event")
-						.icon(sidebarIcon)
-						.priority(5)
-						.panel(panel)
+						.tooltip(
+								"Superior Slayer Event"
+						)
+						.icon(
+								sidebarIcon
+						)
+						.priority(
+								5
+						)
+						.panel(
+								panel
+						)
 						.build();
 
 		if (config.showSidebar())
@@ -232,14 +266,14 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		startLeaderboardTimer();
 
 		/*
-		 * Fetch server state first.
-		 *
-		 * When the snapshot arrives,
-		 * handleEventSnapshot() automatically
-		 * registers the player when appropriate.
+		 * When sync is already enabled,
+		 * immediately connect this player
+		 * to the Members system and fetch
+		 * the current event state.
 		 */
 		if (isLeaderboardSyncEnabled())
 		{
+			sendMemberHeartbeat();
 			refreshLeaderboard();
 		}
 
@@ -253,6 +287,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 	}
 
+
 	/*
 	 * ==================================================
 	 * SHUTDOWN
@@ -264,9 +299,6 @@ public class SuperiorSlayerEventPlugin extends Plugin
 	{
 		saveAllData();
 
-		/*
-		 * Stop automatic leaderboard refresh.
-		 */
 		if (leaderboardRefreshTimer != null)
 		{
 			leaderboardRefreshTimer.stop();
@@ -274,12 +306,8 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		}
 
 		/*
-		 * IMPORTANT:
-		 *
-		 * The panel has its own Swing Timer for
-		 * the live event countdown.
-		 *
-		 * Stop it before discarding the panel.
+		 * The panel contains its own live
+		 * countdown Swing timer.
 		 */
 		if (panel != null)
 		{
@@ -293,6 +321,9 @@ public class SuperiorSlayerEventPlugin extends Plugin
 			);
 		}
 
+		leaderboard.clear();
+		members.clear();
+
 		panel = null;
 		navButton = null;
 		sidebarIcon = null;
@@ -304,9 +335,10 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 	}
 
+
 	/*
 	 * ==================================================
-	 * AUTOMATIC LEADERBOARD REFRESH
+	 * AUTOMATIC REFRESH / HEARTBEAT TIMER
 	 * ==================================================
 	 */
 
@@ -328,6 +360,20 @@ public class SuperiorSlayerEventPlugin extends Plugin
 							}
 
 							updateSlayerLevel();
+
+							/*
+							 * NEW:
+							 *
+							 * Keep Members.Last Seen alive
+							 * even when kills and points
+							 * haven't changed.
+							 */
+							sendMemberHeartbeat();
+
+							/*
+							 * Then download the current
+							 * leaderboard and Members list.
+							 */
 							refreshLeaderboard();
 						}
 				);
@@ -342,6 +388,58 @@ public class SuperiorSlayerEventPlugin extends Plugin
 
 		leaderboardRefreshTimer.start();
 	}
+
+
+	/*
+	 * ==================================================
+	 * MEMBER HEARTBEAT
+	 * ==================================================
+	 */
+
+	private void sendMemberHeartbeat()
+	{
+		if (!isLeaderboardSyncEnabled())
+		{
+			return;
+		}
+
+		if (!isPlayerLoggedIn())
+		{
+			return;
+		}
+
+		updateSlayerLevel();
+
+		if (
+				slayerLevel < 1
+						|| slayerLevel > 99
+		)
+		{
+			return;
+		}
+
+		String playerName =
+				getLocalPlayerName();
+
+		if (
+				playerName == null
+						|| playerName.trim().isEmpty()
+		)
+		{
+			return;
+		}
+
+		leaderboardClient.sendHeartbeat(
+				playerName.trim(),
+				slayerLevel
+		);
+
+		log.debug(
+				"Member heartbeat sent for {}.",
+				playerName
+		);
+	}
+
 
 	/*
 	 * ==================================================
@@ -369,24 +467,36 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		if (
 				localPlayer != null
 						&& localPlayer.getName() != null
-						&& !localPlayer.getName()
+						&& !localPlayer
+						.getName()
 						.trim()
 						.isEmpty()
 		)
 		{
 			lastKnownPlayerName =
-					localPlayer.getName()
+					localPlayer
+							.getName()
 							.trim();
 		}
 
 		if (isLeaderboardSyncEnabled())
 		{
 			resetSubmissionFingerprint();
+
+			/*
+			 * NEW:
+			 *
+			 * Register/update Members immediately
+			 * on login.
+			 */
+			sendMemberHeartbeat();
+
 			refreshLeaderboard();
 		}
 
 		refreshPanel();
 	}
+
 
 	/*
 	 * ==================================================
@@ -427,14 +537,25 @@ public class SuperiorSlayerEventPlugin extends Plugin
 
 		refreshPanel();
 
-		if (
-				isLeaderboardSyncEnabled()
-						&& eventActive
-		)
+		if (isLeaderboardSyncEnabled())
 		{
-			submitScore();
+			/*
+			 * Update the Members sheet with
+			 * the player's new Slayer level.
+			 */
+			sendMemberHeartbeat();
+
+			/*
+			 * Score submission is still only
+			 * allowed while the event is active.
+			 */
+			if (eventActive)
+			{
+				submitScore();
+			}
 		}
 	}
+
 
 	/*
 	 * ==================================================
@@ -466,6 +587,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 					level;
 		}
 	}
+
 
 	/*
 	 * ==================================================
@@ -499,8 +621,9 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		}
 
 		/*
-		 * If connected to a clan event which has
-		 * officially ended, ignore event activity.
+		 * If connected to an event which has
+		 * officially ended, don't treat new
+		 * Superior spawns as event activity.
 		 */
 		if (
 				isLeaderboardSyncEnabled()
@@ -539,6 +662,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 				superior.getSuperiorMonster()
 		);
 	}
+
 
 	/*
 	 * ==================================================
@@ -593,6 +717,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 	}
 
+
 	/*
 	 * ==================================================
 	 * PROCESS SUPERIOR KILL
@@ -637,6 +762,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		)
 		{
 			updateSlayerLevel();
+
 			submitScore();
 		}
 
@@ -725,9 +851,10 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 	}
 
+
 	/*
 	 * ==================================================
-	 * AUTOMATIC PARTICIPANT / SCORE SUBMISSION
+	 * AUTOMATIC SCORE SUBMISSION
 	 * ==================================================
 	 */
 
@@ -754,7 +881,8 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		if (
 				localPlayer == null
 						|| localPlayer.getName() == null
-						|| localPlayer.getName()
+						|| localPlayer
+						.getName()
 						.trim()
 						.isEmpty()
 		)
@@ -777,12 +905,20 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		}
 
 		String playerName =
-				localPlayer.getName()
+				localPlayer
+						.getName()
 						.trim();
 
 		lastKnownPlayerName =
 				playerName;
 
+		/*
+		 * Don't upload identical score data
+		 * repeatedly.
+		 *
+		 * Member heartbeats are handled
+		 * separately.
+		 */
 		if (
 				isSameAsLastSubmission(
 						playerName,
@@ -821,16 +957,18 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 
 		/*
-		 * Refresh shortly after upload so the
-		 * newly submitted participant/score is
-		 * reflected in the sidebar.
+		 * Refresh shortly after submission so
+		 * BuyIns, Members and Boards reflect
+		 * the latest backend state.
 		 */
 		Timer delayedRefresh =
 				new Timer(
 						2000,
 						event ->
 						{
-							if (isLeaderboardSyncEnabled())
+							if (
+									isLeaderboardSyncEnabled()
+							)
 							{
 								refreshLeaderboard();
 							}
@@ -843,6 +981,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 
 		delayedRefresh.start();
 	}
+
 
 	/*
 	 * ==================================================
@@ -870,6 +1009,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 				== lastSubmittedEventVersion;
 	}
 
+
 	private void rememberSubmission(
 			String playerName,
 			int kills,
@@ -893,6 +1033,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 				eventVersion;
 	}
 
+
 	private void resetSubmissionFingerprint()
 	{
 		lastSubmittedPlayer =
@@ -911,9 +1052,10 @@ public class SuperiorSlayerEventPlugin extends Plugin
 				-1;
 	}
 
+
 	/*
 	 * ==================================================
-	 * FETCH EVENT + LEADERBOARD
+	 * FETCH EVENT / LEADERBOARD / MEMBERS
 	 * ==================================================
 	 */
 
@@ -922,6 +1064,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		if (!isLeaderboardSyncEnabled())
 		{
 			leaderboard.clear();
+			members.clear();
 
 			lastLeaderboardSync =
 					"Disabled";
@@ -953,6 +1096,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 	}
 
+
 	/*
 	 * ==================================================
 	 * PROCESS EVENT SNAPSHOT
@@ -974,18 +1118,46 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		eventEnd =
 				snapshot.getEventEnd() == null
 						? ""
-						: snapshot.getEventEnd()
+						: snapshot
+						.getEventEnd()
 						.trim();
 
 		checkForNewEvent(
 				currentEventVersion
 		);
 
+		/*
+		 * Paid leaderboard.
+		 */
 		leaderboard.clear();
 
-		leaderboard.addAll(
+		if (
 				snapshot.getLeaderboard()
-		);
+						!= null
+		)
+		{
+			leaderboard.addAll(
+					snapshot.getLeaderboard()
+			);
+		}
+
+		/*
+		 * NEW:
+		 *
+		 * All plugin members, regardless
+		 * of buy-in status.
+		 */
+		members.clear();
+
+		if (
+				snapshot.getMembers()
+						!= null
+		)
+		{
+			members.addAll(
+					snapshot.getMembers()
+			);
+		}
 
 		lastLeaderboardSync =
 				LocalTime.now()
@@ -996,26 +1168,40 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		refreshPanel();
 
 		log.info(
-				"Event refreshed. Name: {} Active: {} Version: {} End: {}",
+				"Event refreshed. Name: {} Active: {} Version: {} End: {} Leaderboard: {} Members: {}",
 				eventName,
 				eventActive,
 				currentEventVersion,
-				eventEnd
+				eventEnd,
+				leaderboard.size(),
+				members.size()
 		);
 
 		/*
-		 * Automatically register/update the
-		 * logged-in player while the event is active.
+		 * Keep this player registered in
+		 * the Members system regardless
+		 * of whether they've paid.
 		 */
 		if (
-				eventActive
+				isLeaderboardSyncEnabled()
 						&& isPlayerLoggedIn()
 		)
 		{
 			updateSlayerLevel();
-			submitScore();
+
+			sendMemberHeartbeat();
+
+			/*
+			 * Score submission only happens
+			 * while the event is active.
+			 */
+			if (eventActive)
+			{
+				submitScore();
+			}
 		}
 	}
+
 
 	/*
 	 * ==================================================
@@ -1083,6 +1269,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 	}
 
+
 	/*
 	 * ==================================================
 	 * RESET LOCAL EVENT DATA FOR NEW EVENT
@@ -1130,6 +1317,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 
 		leaderboard.clear();
+		members.clear();
 
 		resetSubmissionFingerprint();
 
@@ -1139,6 +1327,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 				"Local Superior Slayer Event progress automatically reset for new event."
 		);
 	}
+
 
 	/*
 	 * ==================================================
@@ -1154,6 +1343,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 				!= null;
 	}
 
+
 	public boolean isLeaderboardSyncEnabled()
 	{
 		Boolean enabled =
@@ -1168,6 +1358,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 	}
 
+
 	/*
 	 * ==================================================
 	 * EVENT GETTERS
@@ -1179,35 +1370,43 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		return lastLeaderboardSync;
 	}
 
+
 	public String getClanName()
 	{
-		return leaderboardClient.getClanName();
+		return leaderboardClient
+				.getClanName();
 	}
+
 
 	public String getEventName()
 	{
 		return eventName;
 	}
 
+
 	public boolean isEventActive()
 	{
 		return eventActive;
 	}
+
 
 	public int getCurrentEventVersion()
 	{
 		return currentEventVersion;
 	}
 
+
 	public String getEventEnd()
 	{
 		return eventEnd;
 	}
 
+
 	public int getSlayerLevel()
 	{
 		return slayerLevel;
 	}
+
 
 	/*
 	 * ==================================================
@@ -1223,13 +1422,15 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		if (
 				player != null
 						&& player.getName() != null
-						&& !player.getName()
+						&& !player
+						.getName()
 						.trim()
 						.isEmpty()
 		)
 		{
 			lastKnownPlayerName =
-					player.getName()
+					player
+							.getName()
 							.trim();
 
 			return lastKnownPlayerName;
@@ -1237,6 +1438,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 
 		return lastKnownPlayerName;
 	}
+
 
 	/*
 	 * ==================================================
@@ -1251,12 +1453,16 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 	}
 
+
 	public int getPlayerRank()
 	{
 		String playerName =
 				getLocalPlayerName();
 
-		if (playerName.isEmpty())
+		if (
+				playerName == null
+						|| playerName.isEmpty()
+		)
 		{
 			return -1;
 		}
@@ -1272,7 +1478,8 @@ public class SuperiorSlayerEventPlugin extends Plugin
 
 			if (
 					entry.getPlayer() != null
-							&& entry.getPlayer()
+							&& entry
+							.getPlayer()
 							.equalsIgnoreCase(
 									playerName
 							)
@@ -1284,6 +1491,61 @@ public class SuperiorSlayerEventPlugin extends Plugin
 
 		return -1;
 	}
+
+
+	/*
+	 * ==================================================
+	 * MEMBERS
+	 * ==================================================
+	 */
+
+	public List<MemberEntry> getMembers()
+	{
+		return new ArrayList<>(
+				members
+		);
+	}
+
+
+	/*
+	 * Useful if we later want to display
+	 * the logged-in player's own member
+	 * status in the Event tab.
+	 */
+	public MemberEntry getLocalMember()
+	{
+		String playerName =
+				getLocalPlayerName();
+
+		if (
+				playerName == null
+						|| playerName.isEmpty()
+		)
+		{
+			return null;
+		}
+
+		for (
+				MemberEntry member :
+				members
+		)
+		{
+			if (
+					member.getPlayer() != null
+							&& member
+							.getPlayer()
+							.equalsIgnoreCase(
+									playerName
+							)
+			)
+			{
+				return member;
+			}
+		}
+
+		return null;
+	}
+
 
 	/*
 	 * ==================================================
@@ -1305,8 +1567,11 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		}
 
 		/*
+		 * ==================================================
 		 * SIDEBAR
+		 * ==================================================
 		 */
+
 		if (
 				"showSidebar".equals(
 						event.getKey()
@@ -1333,9 +1598,13 @@ public class SuperiorSlayerEventPlugin extends Plugin
 			}
 		}
 
+
 		/*
-		 * LEADERBOARD SYNC ENABLED / DISABLED
+		 * ==================================================
+		 * LEADERBOARD SYNC
+		 * ==================================================
 		 */
+
 		if (
 				"enableLeaderboardSync".equals(
 						event.getKey()
@@ -1351,11 +1620,20 @@ public class SuperiorSlayerEventPlugin extends Plugin
 
 				resetSubmissionFingerprint();
 
+				/*
+				 * NEW:
+				 *
+				 * Register the user immediately
+				 * when sync is enabled.
+				 */
+				sendMemberHeartbeat();
+
 				refreshLeaderboard();
 			}
 			else
 			{
 				leaderboard.clear();
+				members.clear();
 
 				lastLeaderboardSync =
 						"Disabled";
@@ -1366,9 +1644,13 @@ public class SuperiorSlayerEventPlugin extends Plugin
 			}
 		}
 
+
 		/*
-		 * EVENT URL OR KEY CHANGED
+		 * ==================================================
+		 * EVENT URL OR EVENT KEY CHANGED
+		 * ==================================================
 		 */
+
 		if (
 				"clanEventUrl".equals(
 						event.getKey()
@@ -1387,6 +1669,13 @@ public class SuperiorSlayerEventPlugin extends Plugin
 
 				resetSubmissionFingerprint();
 
+				/*
+				 * NEW:
+				 * reconnect the member heartbeat
+				 * using the updated backend details.
+				 */
+				sendMemberHeartbeat();
+
 				refreshLeaderboard();
 			}
 		}
@@ -1401,6 +1690,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 				}
 		);
 	}
+
 
 	/*
 	 * ==================================================
@@ -1459,6 +1749,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		}
 	}
 
+
 	/*
 	 * ==================================================
 	 * SAVE DATA
@@ -1484,6 +1775,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		}
 	}
 
+
 	private void saveTotals()
 	{
 		configManager.setConfiguration(
@@ -1499,6 +1791,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 	}
 
+
 	private void saveMonsterKillCount(
 			SuperiorMonster monster,
 			int kills)
@@ -1512,13 +1805,16 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 	}
 
+
 	private String getMonsterConfigKey(
 			SuperiorMonster monster)
 	{
 		return MONSTER_KILL_PREFIX
-				+ monster.name()
+				+ monster
+				.name()
 				.toLowerCase();
 	}
+
 
 	/*
 	 * ==================================================
@@ -1538,6 +1834,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 	}
 
+
 	/*
 	 * ==================================================
 	 * STAT GETTERS
@@ -1549,20 +1846,24 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		return totalSuperiorKills;
 	}
 
+
 	public int getTotalEventPoints()
 	{
 		return totalEventPoints;
 	}
+
 
 	public int getSessionSuperiorKills()
 	{
 		return sessionSuperiorKills;
 	}
 
+
 	public int getSessionEventPoints()
 	{
 		return sessionEventPoints;
 	}
+
 
 	public int getKillsForMonster(
 			SuperiorMonster monster)
@@ -1573,12 +1874,14 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 	}
 
+
 	public Map<SuperiorMonster, Integer> getMonsterKills()
 	{
 		return new EnumMap<>(
 				monsterKills
 		);
 	}
+
 
 	/*
 	 * ==================================================
@@ -1596,7 +1899,9 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		sessionEventPoints = 0;
 
 		monsterKills.clear();
+
 		leaderboard.clear();
+		members.clear();
 
 		for (
 				SuperiorMonster monster :
@@ -1627,11 +1932,12 @@ public class SuperiorSlayerEventPlugin extends Plugin
 		);
 
 		/*
-		 * Do not remove EVENT_VERSION_KEY here.
+		 * Do NOT remove EVENT_VERSION_KEY.
 		 *
-		 * Keeping it prevents a normal manual reset
-		 * from interfering with server-side
-		 * new-event detection.
+		 * Keeping the current version allows
+		 * the backend to correctly detect when
+		 * the organiser starts a genuinely
+		 * new event.
 		 */
 		resetSubmissionFingerprint();
 
@@ -1641,6 +1947,7 @@ public class SuperiorSlayerEventPlugin extends Plugin
 				"Superior Slayer Event data has been manually reset."
 		);
 	}
+
 
 	/*
 	 * ==================================================

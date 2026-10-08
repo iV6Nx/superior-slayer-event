@@ -37,21 +37,36 @@ public class SuperiorLeaderboardClient
     private final Gson gson;
     private final SuperiorSlayerEventConfig config;
 
+    /*
+     * ==================================================
+     * EVENT INFORMATION
+     * ==================================================
+     */
+
     private volatile String clanName = "";
+
     private volatile String eventName =
             "Superior Slayer Event";
 
     private volatile boolean eventActive = true;
+
     private volatile int resetVersion = 1;
 
     /*
-     * NEW:
-     * End date/time supplied by EventControl!B5
+     * Event end supplied by EventControl!B5.
      *
      * Example:
-     * 2026-10-31 23:59
+     *
+     * 2026-10-31T23:59:00.000Z
      */
     private volatile String eventEnd = "";
+
+
+    /*
+     * ==================================================
+     * CONSTRUCTOR
+     * ==================================================
+     */
 
     @Inject
     public SuperiorLeaderboardClient(
@@ -64,9 +79,10 @@ public class SuperiorLeaderboardClient
         this.config = config;
     }
 
+
     /*
      * ==================================================
-     * EVENT INFORMATION
+     * EVENT INFORMATION GETTERS
      * ==================================================
      */
 
@@ -90,17 +106,29 @@ public class SuperiorLeaderboardClient
         return resetVersion;
     }
 
-    /*
-     * NEW
-     */
     public String getEventEnd()
     {
         return eventEnd;
     }
 
+
     /*
      * ==================================================
      * SUBMIT SCORE
+     * ==================================================
+     *
+     * Sends:
+     *
+     * - player
+     * - kills
+     * - points
+     * - Slayer level
+     *
+     * The Apps Script also uses this request to:
+     *
+     * - register the player in BuyIns
+     * - register/update the player in Members
+     * - update Last Seen
      * ==================================================
      */
 
@@ -137,6 +165,30 @@ public class SuperiorLeaderboardClient
             return;
         }
 
+        if (
+                player == null
+                        || player.trim().isEmpty()
+        )
+        {
+            log.warn(
+                    "Leaderboard submission skipped because player name is missing."
+            );
+
+            return;
+        }
+
+        if (
+                slayerLevel < 1
+                        || slayerLevel > 99
+        )
+        {
+            log.warn(
+                    "Leaderboard submission skipped because Slayer level is invalid."
+            );
+
+            return;
+        }
+
         JsonObject json =
                 new JsonObject();
 
@@ -147,7 +199,7 @@ public class SuperiorLeaderboardClient
 
         json.addProperty(
                 "player",
-                player
+                player.trim()
         );
 
         json.addProperty(
@@ -288,13 +340,8 @@ public class SuperiorLeaderboardClient
                                     }
 
                                     /*
-                                     * This now updates:
-                                     *
-                                     * clanName
-                                     * eventName
-                                     * eventActive
-                                     * resetVersion
-                                     * eventEnd
+                                     * Update event information returned
+                                     * by the backend.
                                      */
                                     updateEventInformation(
                                             result
@@ -316,9 +363,238 @@ public class SuperiorLeaderboardClient
                 );
     }
 
+
+    /*
+     * ==================================================
+     * MEMBER HEARTBEAT
+     * ==================================================
+     *
+     * Sent every couple of minutes while the player
+     * is logged in and leaderboard sync is enabled.
+     *
+     * This does NOT change kills or points.
+     *
+     * It simply tells the backend:
+     *
+     * - this player is still using the plugin
+     * - their current Slayer level
+     *
+     * The backend then updates:
+     *
+     * - Members.Last Seen
+     * - Members.Online
+     * - Members.Slayer Level
+     * ==================================================
+     */
+
+    public void sendHeartbeat(
+            String player,
+            int slayerLevel)
+    {
+        String url =
+                getEventUrl();
+
+        String eventKey =
+                getEventKey();
+
+        if (!hasConnectionDetails(
+                url,
+                eventKey
+        ))
+        {
+            return;
+        }
+
+        if (
+                player == null
+                        || player.trim().isEmpty()
+        )
+        {
+            return;
+        }
+
+        if (
+                slayerLevel < 1
+                        || slayerLevel > 99
+        )
+        {
+            return;
+        }
+
+        JsonObject json =
+                new JsonObject();
+
+        json.addProperty(
+                "eventKey",
+                eventKey
+        );
+
+        json.addProperty(
+                "action",
+                "heartbeat"
+        );
+
+        json.addProperty(
+                "player",
+                player.trim()
+        );
+
+        json.addProperty(
+                "slayerLevel",
+                slayerLevel
+        );
+
+        RequestBody body =
+                RequestBody.create(
+                        JSON,
+                        gson.toJson(json)
+                );
+
+        Request request;
+
+        try
+        {
+            request =
+                    new Request.Builder()
+                            .url(url)
+                            .post(body)
+                            .build();
+        }
+        catch (IllegalArgumentException exception)
+        {
+            log.warn(
+                    "Invalid Clan Event URL.",
+                    exception
+            );
+
+            return;
+        }
+
+        httpClient
+                .newCall(request)
+                .enqueue(
+                        new Callback()
+                        {
+                            @Override
+                            public void onFailure(
+                                    Call call,
+                                    IOException exception)
+                            {
+                                log.warn(
+                                        "Failed to send Superior Slayer member heartbeat.",
+                                        exception
+                                );
+                            }
+
+                            @Override
+                            public void onResponse(
+                                    Call call,
+                                    Response response)
+                            {
+                                try (
+                                        Response closeableResponse =
+                                                response
+                                )
+                                {
+                                    if (
+                                            !closeableResponse
+                                                    .isSuccessful()
+                                    )
+                                    {
+                                        log.warn(
+                                                "Member heartbeat failed with HTTP {}.",
+                                                closeableResponse.code()
+                                        );
+
+                                        return;
+                                    }
+
+                                    String responseBody =
+                                            closeableResponse.body()
+                                                    != null
+                                                    ? closeableResponse
+                                                    .body()
+                                                    .string()
+                                                    : "";
+
+                                    if (responseBody.isEmpty())
+                                    {
+                                        log.warn(
+                                                "Member heartbeat returned an empty response."
+                                        );
+
+                                        return;
+                                    }
+
+                                    JsonObject result =
+                                            gson.fromJson(
+                                                    responseBody,
+                                                    JsonObject.class
+                                            );
+
+                                    if (
+                                            result == null
+                                                    || !result.has("success")
+                                                    || !result
+                                                    .get("success")
+                                                    .getAsBoolean()
+                                    )
+                                    {
+                                        String error =
+                                                result != null
+                                                        && result.has("error")
+                                                        ? result
+                                                        .get("error")
+                                                        .getAsString()
+                                                        : "Unknown error";
+
+                                        log.warn(
+                                                "Member heartbeat was rejected: {}",
+                                                error
+                                        );
+
+                                        return;
+                                    }
+
+                                    /*
+                                     * Heartbeat response also includes
+                                     * current event information.
+                                     */
+                                    updateEventInformation(
+                                            result
+                                    );
+
+                                    log.debug(
+                                            "Superior Slayer member heartbeat sent successfully."
+                                    );
+                                }
+                                catch (Exception exception)
+                                {
+                                    log.warn(
+                                            "Failed to read member heartbeat response.",
+                                            exception
+                                    );
+                                }
+                            }
+                        }
+                );
+    }
+
+
     /*
      * ==================================================
      * FETCH EVENT SNAPSHOT
+     * ==================================================
+     *
+     * Fetches:
+     *
+     * - clan name
+     * - event name
+     * - event active
+     * - event version
+     * - event end
+     * - paid leaderboard
+     * - all plugin members
      * ==================================================
      */
 
@@ -483,23 +759,34 @@ public class SuperiorLeaderboardClient
                                     }
 
                                     /*
-                                     * Read all event information,
-                                     * including the new eventEnd.
+                                     * Read event information.
                                      */
                                     updateEventInformation(
                                             result
                                     );
 
+                                    /*
+                                     * Parse paid leaderboard.
+                                     */
                                     List<LeaderboardEntry> entries =
                                             parseLeaderboard(
                                                     result
                                             );
 
                                     /*
-                                     * UPDATED:
+                                     * Parse all plugin members.
+                                     */
+                                    List<MemberEntry> members =
+                                            parseMembers(
+                                                    result
+                                            );
+
+                                    /*
+                                     * EventSnapshot now contains:
                                      *
-                                     * EventSnapshot now receives
-                                     * eventEnd before the leaderboard.
+                                     * - event information
+                                     * - leaderboard
+                                     * - members
                                      */
                                     EventSnapshot snapshot =
                                             new EventSnapshot(
@@ -508,7 +795,8 @@ public class SuperiorLeaderboardClient
                                                     eventActive,
                                                     resetVersion,
                                                     eventEnd,
-                                                    entries
+                                                    entries,
+                                                    members
                                             );
 
                                     callback.accept(
@@ -531,9 +819,14 @@ public class SuperiorLeaderboardClient
                 );
     }
 
+
     /*
      * ==================================================
      * FETCH LEADERBOARD
+     * ==================================================
+     *
+     * Kept for compatibility with any existing
+     * code that only wants the leaderboard.
      * ==================================================
      */
 
@@ -559,6 +852,7 @@ public class SuperiorLeaderboardClient
         );
     }
 
+
     /*
      * ==================================================
      * UPDATE EVENT INFORMATION
@@ -568,7 +862,10 @@ public class SuperiorLeaderboardClient
     private void updateEventInformation(
             JsonObject result)
     {
-        if (result.has("clanName"))
+        if (
+                result.has("clanName")
+                        && !result.get("clanName").isJsonNull()
+        )
         {
             clanName =
                     result
@@ -576,7 +873,10 @@ public class SuperiorLeaderboardClient
                             .getAsString();
         }
 
-        if (result.has("eventName"))
+        if (
+                result.has("eventName")
+                        && !result.get("eventName").isJsonNull()
+        )
         {
             eventName =
                     result
@@ -584,7 +884,10 @@ public class SuperiorLeaderboardClient
                             .getAsString();
         }
 
-        if (result.has("eventActive"))
+        if (
+                result.has("eventActive")
+                        && !result.get("eventActive").isJsonNull()
+        )
         {
             eventActive =
                     result
@@ -592,7 +895,10 @@ public class SuperiorLeaderboardClient
                             .getAsBoolean();
         }
 
-        if (result.has("resetVersion"))
+        if (
+                result.has("resetVersion")
+                        && !result.get("resetVersion").isJsonNull()
+        )
         {
             resetVersion =
                     result
@@ -600,10 +906,6 @@ public class SuperiorLeaderboardClient
                             .getAsInt();
         }
 
-        /*
-         * NEW:
-         * Read EventControl!B5 from the JSON response.
-         */
         if (
                 result.has("eventEnd")
                         && !result.get("eventEnd").isJsonNull()
@@ -620,6 +922,7 @@ public class SuperiorLeaderboardClient
         }
     }
 
+
     /*
      * ==================================================
      * PARSE LEADERBOARD
@@ -632,7 +935,10 @@ public class SuperiorLeaderboardClient
         List<LeaderboardEntry> entries =
                 new ArrayList<>();
 
-        if (!result.has("leaderboard"))
+        if (
+                !result.has("leaderboard")
+                        || result.get("leaderboard").isJsonNull()
+        )
         {
             return entries;
         }
@@ -642,17 +948,31 @@ public class SuperiorLeaderboardClient
                         "leaderboard"
                 );
 
+        if (leaderboardArray == null)
+        {
+            return entries;
+        }
+
         for (
                 JsonElement element :
                 leaderboardArray
         )
         {
+            if (
+                    element == null
+                            || element.isJsonNull()
+                            || !element.isJsonObject()
+            )
+            {
+                continue;
+            }
+
             JsonObject entry =
-                    element
-                            .getAsJsonObject();
+                    element.getAsJsonObject();
 
             String player =
                     entry.has("player")
+                            && !entry.get("player").isJsonNull()
                             ? entry
                             .get("player")
                             .getAsString()
@@ -660,6 +980,7 @@ public class SuperiorLeaderboardClient
 
             int kills =
                     entry.has("kills")
+                            && !entry.get("kills").isJsonNull()
                             ? entry
                             .get("kills")
                             .getAsInt()
@@ -667,6 +988,7 @@ public class SuperiorLeaderboardClient
 
             int points =
                     entry.has("points")
+                            && !entry.get("points").isJsonNull()
                             ? entry
                             .get("points")
                             .getAsInt()
@@ -674,16 +996,17 @@ public class SuperiorLeaderboardClient
 
             int slayerLevel =
                     entry.has("slayerLevel")
+                            && !entry.get("slayerLevel").isJsonNull()
                             ? entry
                             .get("slayerLevel")
                             .getAsInt()
                             : 0;
 
-            if (!player.isEmpty())
+            if (!player.trim().isEmpty())
             {
                 entries.add(
                         new LeaderboardEntry(
-                                player,
+                                player.trim(),
                                 kills,
                                 points,
                                 slayerLevel
@@ -694,6 +1017,141 @@ public class SuperiorLeaderboardClient
 
         return entries;
     }
+
+
+    /*
+     * ==================================================
+     * PARSE MEMBERS
+     * ==================================================
+     *
+     * Expected JSON example:
+     *
+     * {
+     *   "player": "iV6N",
+     *   "lastSeen": "...",
+     *   "online": true,
+     *   "slayerLevel": 84,
+     *   "eventVersion": 2,
+     *   "buyInStatus": "Paid",
+     *   "eligible": true
+     * }
+     * ==================================================
+     */
+
+    private List<MemberEntry> parseMembers(
+            JsonObject result)
+    {
+        List<MemberEntry> members =
+                new ArrayList<>();
+
+        if (
+                !result.has("members")
+                        || result.get("members").isJsonNull()
+        )
+        {
+            return members;
+        }
+
+        JsonArray membersArray =
+                result.getAsJsonArray(
+                        "members"
+                );
+
+        if (membersArray == null)
+        {
+            return members;
+        }
+
+        for (
+                JsonElement element :
+                membersArray
+        )
+        {
+            if (
+                    element == null
+                            || element.isJsonNull()
+                            || !element.isJsonObject()
+            )
+            {
+                continue;
+            }
+
+            JsonObject entry =
+                    element.getAsJsonObject();
+
+            String player =
+                    entry.has("player")
+                            && !entry.get("player").isJsonNull()
+                            ? entry
+                            .get("player")
+                            .getAsString()
+                            : "";
+
+            String lastSeen =
+                    entry.has("lastSeen")
+                            && !entry.get("lastSeen").isJsonNull()
+                            ? entry
+                            .get("lastSeen")
+                            .getAsString()
+                            : "";
+
+            boolean online =
+                    entry.has("online")
+                            && !entry.get("online").isJsonNull()
+                            && entry
+                            .get("online")
+                            .getAsBoolean();
+
+            int slayerLevel =
+                    entry.has("slayerLevel")
+                            && !entry.get("slayerLevel").isJsonNull()
+                            ? entry
+                            .get("slayerLevel")
+                            .getAsInt()
+                            : 0;
+
+            int eventVersion =
+                    entry.has("eventVersion")
+                            && !entry.get("eventVersion").isJsonNull()
+                            ? entry
+                            .get("eventVersion")
+                            .getAsInt()
+                            : 0;
+
+            String buyInStatus =
+                    entry.has("buyInStatus")
+                            && !entry.get("buyInStatus").isJsonNull()
+                            ? entry
+                            .get("buyInStatus")
+                            .getAsString()
+                            : "Not Paid";
+
+            boolean eligible =
+                    entry.has("eligible")
+                            && !entry.get("eligible").isJsonNull()
+                            && entry
+                            .get("eligible")
+                            .getAsBoolean();
+
+            if (!player.trim().isEmpty())
+            {
+                members.add(
+                        new MemberEntry(
+                                player.trim(),
+                                lastSeen,
+                                online,
+                                slayerLevel,
+                                eventVersion,
+                                buyInStatus,
+                                eligible
+                        )
+                );
+            }
+        }
+
+        return members;
+    }
+
 
     /*
      * ==================================================
